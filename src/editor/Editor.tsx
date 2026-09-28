@@ -355,7 +355,13 @@ export function Editor(props: EditorProps) {
       case 'brush': {
         const eraser = prefs.tool === 'eraser';
         const width = eraser ? prefs.eraserWidth : prefs.brushWidth;
-        const { points, pressures } = cleanStroke(strokeRef.current, pressureRef.current ?? undefined, width);
+        const { points, pressures } = cleanStroke(
+          strokeRef.current,
+          pressureRef.current ?? undefined,
+          width,
+          // Never move the line by more than half a screen pixel.
+          0.5 / v.s,
+        );
         const shape: BrushShape = {
           id: uid(),
           kind: 'brush',

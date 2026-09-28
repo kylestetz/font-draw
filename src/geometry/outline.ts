@@ -22,7 +22,73 @@ export type Outline = { contours: Contour[]; bounds: Bounds | null };
 
 const CLIPPER_SCALE = 16;
 const ARC_TOLERANCE = 0.2;
-const FIT_TOLERANCE = 0.8;
+/** Max squared error (font units²) when fitting curves to brush outlines. */
+const FIT_TOLERANCE = 0.25;
+/** Brush outline edges are split to at most this length before fitting, so curves can't bulge. */
+const FIT_MAX_EDGE = 4;
+
+/** Turns sharper than this (radians) are kept as real corners instead of being curve-fitted. */
+const CORNER_ANGLE = 0.5;
+
+type P2 = [number, number];
+
+/** Adds evenly spaced points along the edges of an open polyline so no edge exceeds FIT_MAX_EDGE. */
+function densify(run: P2[]): P2[] {
+  const out: P2[] = [run[0]];
+  for (let i = 1; i < run.length; i++) {
+    const [ax, ay] = run[i - 1];
+    const [bx, by] = run[i];
+    const steps = Math.ceil(Math.hypot(bx - ax, by - ay) / FIT_MAX_EDGE);
+    for (let k = 1; k <= steps; k++) out.push([ax + ((bx - ax) * k) / steps, ay + ((by - ay) * k) / steps]);
+  }
+  return out;
+}
+
+function turnAngle(a: P2, b: P2, c: P2) {
+  const a1 = Math.atan2(b[1] - a[1], b[0] - a[0]);
+  const a2 = Math.atan2(c[1] - b[1], c[0] - b[0]);
+  let d = Math.abs(a2 - a1);
+  if (d > Math.PI) d = Math.PI * 2 - d;
+  return d;
+}
+
+/**
+ * Fits curves to a closed polygon. Paper's fitter only makes smooth joins, so the polygon is cut at
+ * sharp corners (e.g. the inside of a zig-zag) and each run between corners is fitted on its own.
+ */
+function fitPolygon(poly: P2[]): paper.Path {
+  const n = poly.length;
+  const corners: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (turnAngle(poly[(i - 1 + n) % n], poly[i], poly[(i + 1) % n]) > CORNER_ANGLE) corners.push(i);
+  }
+  if (!corners.length) {
+    const path = new scope.Path({ segments: densify([...poly, poly[0]]).slice(0, -1), closed: true, insert: false });
+    path.simplify(FIT_TOLERANCE);
+    return path;
+  }
+  const segments: paper.Segment[] = [];
+  for (let c = 0; c < corners.length; c++) {
+    const from = corners[c];
+    const to = corners[(c + 1) % corners.length];
+    const run: P2[] = [];
+    for (let i = from; ; i = (i + 1) % n) {
+      run.push(poly[i]);
+      if (i === to && run.length > 1) break;
+    }
+    const part = new scope.Path({ segments: densify(run), insert: false });
+    if (part.segments.length > 2) part.simplify(FIT_TOLERANCE);
+    const segs = part.segments;
+    // The run's last point is the next run's first; merge them so that corner keeps both handles.
+    if (segments.length) segments[segments.length - 1].handleOut = segs[0].handleOut.clone();
+    else segments.push(segs[0].clone());
+    for (let i = 1; i < segs.length; i++) segments.push(segs[i].clone());
+  }
+  // The final segment duplicates the first corner.
+  const last = segments.pop()!;
+  segments[0].handleIn = last.handleIn.clone();
+  return new scope.Path({ segments, closed: true, insert: false });
+}
 
 function penItem(shape: PenShape): paper.PathItem | null {
   if (shape.nodes.length < 2) return null;
@@ -125,15 +191,7 @@ function brushItem(shape: BrushShape): paper.PathItem | null {
       : offsetStroke(points, width);
   const children = solution
     .filter((poly) => poly.length >= 3)
-    .map((poly) => {
-      const path = new scope.Path({
-        segments: poly.map((p) => [p.X / CLIPPER_SCALE, p.Y / CLIPPER_SCALE]),
-        closed: true,
-        insert: false,
-      });
-      path.simplify(FIT_TOLERANCE);
-      return path;
-    });
+    .map((poly) => fitPolygon(poly.map((p): P2 => [p.X / CLIPPER_SCALE, p.Y / CLIPPER_SCALE])));
   if (!children.length) return null;
   if (children.length === 1) return children[0];
   return new scope.CompoundPath({ children, insert: false });
