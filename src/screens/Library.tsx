@@ -1,10 +1,11 @@
-import { useRef } from 'react';
-import { createFont, deleteFont, duplicateFont, importFont, isDrawn, useStore } from '../store';
+import { useRef, useState } from 'react';
+import { deleteFont, duplicateFont, importFont, isDrawn, useStore } from '../store';
 import { navigate, paths } from '../router';
 import { ALL_CHARS } from '../glyphs';
 import { GlyphRun } from '../components/GlyphSvg';
 import { readProjectFile } from '../export';
 import type { Font } from '../types';
+import { NewFontDialog } from '../components/NewFontDialog';
 
 function sampleText(font: Font) {
   if (isDrawn(font, 'A') && isDrawn(font, 'a')) return 'Aa';
@@ -16,7 +17,8 @@ export function Library({ notFound }: { notFound?: boolean }) {
   const { fonts } = useStore();
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const onNew = () => navigate(paths.font(createFont().id));
+  const [creating, setCreating] = useState(false);
+  const onNew = () => setCreating(true);
 
   const onImport = async (file: File | undefined) => {
     if (!file) return;
@@ -83,7 +85,10 @@ export function Library({ notFound }: { notFound?: boolean }) {
                   )}
                 </div>
                 <div className="font-card-meta">
-                  <div className="font-card-name">{font.name || 'Untitled'}</div>
+                  <div className="font-card-name">
+                    {font.name || 'Untitled'}
+                    {font.monoWidth !== undefined && <span className="tag">Mono</span>}
+                  </div>
                   <div className="muted mono small">
                     {drawn}/{ALL_CHARS.length} glyphs · {new Date(font.updatedAt).toLocaleDateString()}
                   </div>
@@ -103,6 +108,7 @@ export function Library({ notFound }: { notFound?: boolean }) {
           })}
         </div>
       </main>
+      {creating && <NewFontDialog onClose={() => setCreating(false)} />}
     </div>
   );
 }

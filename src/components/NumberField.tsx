@@ -42,7 +42,11 @@ export function NumberField({
           onChange={(e) => setDraft(e.target.value)}
           onBlur={(e) => commit(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+            if (e.key === 'Enter') {
+              // Commit here rather than letting Enter submit a surrounding form with a stale value.
+              e.preventDefault();
+              (e.target as HTMLInputElement).blur();
+            }
             if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
               e.preventDefault();
               const delta = (e.key === 'ArrowUp' ? 1 : -1) * step * (e.shiftKey ? 10 : 1);

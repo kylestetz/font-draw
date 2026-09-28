@@ -3,6 +3,7 @@
 A browser app for making real font files by drawing each glyph.
 
 - **Library**: create, duplicate, delete, and reopen fonts. Everything is saved automatically in the browser (IndexedDB).
+- **Proportional or monospace**: choose when you create a font, or switch later in the font's settings. In a monospace font every glyph shares one cell width, and the sidebearing controls move the drawing within the cell (there's also *Center in cell*). Each glyph keeps its own proportional width, so switching back loses nothing. Monospace exports are flagged as fixed-pitch (`post.isFixedPitch`, PANOSE proportion 9), so apps list them with other monospace fonts.
 - **Font view**: a grid of every glyph (A–Z, a–z, 0–9, common punctuation and symbols), a live type tester that uses the font you're drawing, vertical metrics settings, and **Download .otf**.
 - **Draw screen**:
   - **Pen** (P): click to place corners, drag to pull out Bézier handles, click the first point or press Enter to close. Set it to *Cut out* for counters (the hole in an O).

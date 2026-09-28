@@ -3,8 +3,10 @@ import type { Font, Glyph, PathNode, PenShape } from '../types';
 import {
   addAlternate,
   deleteAlternate,
+  advanceOf,
   getGlyph,
   isDrawn,
+  setMonoWidth,
   setCycleAlternates,
   setGlyph,
   uid,
@@ -302,18 +304,27 @@ export function DrawScreen({ font, char, variant }: { font: Font; char: string; 
   }, [char]);
 
   // ---------- metrics ----------
+  const mono = font.monoWidth !== undefined;
+  const advance = advanceOf(font, glyph);
   const bounds = glyphOutline(glyph.shapes).bounds;
   const lsb = bounds ? Math.round(bounds.x) : null;
-  const rsb = bounds ? Math.round(glyph.advance - bounds.x - bounds.width) : null;
+  const rsb = bounds ? Math.round(advance - bounds.x - bounds.width) : null;
+  const shift = (dx: number): Glyph => ({ ...glyph, shapes: glyph.shapes.map((s) => translateShape(s, dx, 0)) });
+  // Proportional: sidebearings change the width. Monospaced: the width is fixed, so they move the drawing.
   const setLsb = (value: number) => {
     if (!bounds) return;
     const dx = value - bounds.x;
-    commit({ shapes: glyph.shapes.map((s) => translateShape(s, dx, 0)), advance: Math.round(glyph.advance + dx) });
+    commit(mono ? shift(dx) : { ...shift(dx), advance: Math.round(glyph.advance + dx) });
   };
   const setRsb = (value: number) => {
-    if (!bounds) return;
-    commit({ ...glyph, advance: Math.max(0, Math.round(bounds.x + bounds.width + value)) });
+    if (!bounds || rsb === null) return;
+    if (mono) commit(shift(rsb - value));
+    else commit({ ...glyph, advance: Math.max(0, Math.round(bounds.x + bounds.width + value)) });
   };
+  const centerInCell = () => {
+    if (bounds) commit(shift(Math.round((advance - bounds.width) / 2 - bounds.x)));
+  };
+  const overflow = mono && lsb !== null && rsb !== null ? Math.max(0, -lsb, -rsb) : 0;
   const autoFit = () => {
     if (!bounds) return;
     const side = Math.round(font.metrics.unitsPerEm * 0.06);
@@ -609,9 +620,22 @@ export function DrawScreen({ font, char, variant }: { font: Font; char: string; 
           </section>
 
           <section className="panel">
-            <div className="panel-title">Spacing</div>
+            <div className="panel-title">
+              Spacing {mono && <span className="muted">monospace</span>}
+            </div>
             <div className="field-grid three">
-              <NumberField label="Width" value={glyph.advance} min={0} max={3000} step={10} onChange={(advance) => commit({ ...glyph, advance })} />
+              {mono ? (
+                <NumberField
+                  label="Cell width"
+                  value={advance}
+                  min={50}
+                  max={3000}
+                  step={10}
+                  onChange={(w) => setMonoWidth(font.id, w)}
+                />
+              ) : (
+                <NumberField label="Width" value={glyph.advance} min={0} max={3000} step={10} onChange={(advance) => commit({ ...glyph, advance })} />
+              )}
               {lsb !== null && rsb !== null ? (
                 <>
                   <NumberField label="Left" value={lsb} min={-1000} max={1000} step={5} onChange={setLsb} />
@@ -621,9 +645,20 @@ export function DrawScreen({ font, char, variant }: { font: Font; char: string; 
                 <div className="muted small span2">Draw something to edit sidebearings.</div>
               )}
             </div>
-            <button className="button block" onClick={autoFit} disabled={!bounds}>
-              Auto-fit width
-            </button>
+            {mono ? (
+              <>
+                {overflow > 0 && (
+                  <p className="small warning">The drawing spills {overflow} units outside the cell.</p>
+                )}
+                <button className="button block" onClick={centerInCell} disabled={!bounds}>
+                  Center in cell
+                </button>
+              </>
+            ) : (
+              <button className="button block" onClick={autoFit} disabled={!bounds}>
+                Auto-fit width
+              </button>
+            )}
           </section>
 
           <section className="panel">

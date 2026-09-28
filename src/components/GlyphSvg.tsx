@@ -1,13 +1,13 @@
 import type { Font, Glyph } from '../types';
 import { glyphSvgPath } from '../geometry/outline';
-import { getGlyph } from '../store';
+import { advanceOf, getGlyph } from '../store';
 import { cycleVariants } from '../features';
 
 /** A single glyph centered in a square em box. */
 export function GlyphThumb({ font, glyph, className }: { font: Font; glyph: Glyph; className?: string }) {
   const { ascender, descender } = font.metrics;
   const h = ascender - descender;
-  const cx = glyph.advance / 2;
+  const cx = advanceOf(font, glyph) / 2;
   return (
     <svg className={className} viewBox={`${cx - h / 2} ${-ascender} ${h} ${h}`} aria-hidden>
       <path d={glyphSvgPath(glyph.shapes)} transform="scale(1,-1)" />
@@ -42,12 +42,12 @@ export function GlyphRun({
     const item = (
       <g key={i} transform={`translate(${x} 0) scale(1,-1)`}>
         {highlight === set.char && (
-          <rect x={0} y={descender} width={glyph.advance} height={ascender - descender} className="run-highlight" />
+          <rect x={0} y={descender} width={advanceOf(font, glyph)} height={ascender - descender} className="run-highlight" />
         )}
         <path d={glyphSvgPath(glyph.shapes)} />
       </g>
     );
-    x += glyph.advance;
+    x += advanceOf(font, glyph);
     return item;
   });
   const width = Math.max(x, 1);

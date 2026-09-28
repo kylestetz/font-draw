@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Font, Metrics } from '../types';
 import {
+  DEFAULT_MONO_WIDTH,
+  centerAllGlyphs,
   deleteFont,
   drawnAlternates,
   getGlyph,
@@ -8,6 +10,7 @@ import {
   renameFont,
   setCycleAlternates,
   setMetrics,
+  setMonoWidth,
 } from '../store';
 import { navigate, paths } from '../router';
 import { ALL_CHARS, GLYPH_GROUPS, codeHex, describeChar } from '../glyphs';
@@ -43,7 +46,7 @@ function useFontFace(font: Font) {
       const old = face;
       if (old) setTimeout(() => document.fonts.delete(old), 2000);
     };
-  }, [font.glyphs, font.alternates, font.cycleAlternates, font.metrics, font.name]);
+  }, [font.glyphs, font.alternates, font.cycleAlternates, font.monoWidth, font.metrics, font.name]);
   return family;
 }
 
@@ -170,6 +173,54 @@ export function FontView({ font }: { font: Font }) {
             <div className="muted small mono">
               {drawnCount} of {ALL_CHARS.length} glyphs drawn
             </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-title">Spacing</div>
+            <div className="segmented">
+              <button
+                className={font.monoWidth === undefined ? 'active' : ''}
+                onClick={() => setMonoWidth(font.id, undefined)}
+              >
+                Proportional
+              </button>
+              <button
+                className={font.monoWidth !== undefined ? 'active' : ''}
+                onClick={() => font.monoWidth === undefined && setMonoWidth(font.id, DEFAULT_MONO_WIDTH)}
+              >
+                Monospace
+              </button>
+            </div>
+            {font.monoWidth !== undefined ? (
+              <>
+                <div className="field-grid">
+                  <NumberField
+                    label="Cell width"
+                    value={font.monoWidth}
+                    min={50}
+                    max={3000}
+                    step={10}
+                    suffix="u"
+                    onChange={(w) => setMonoWidth(font.id, w)}
+                  />
+                </div>
+                <p className="muted small">
+                  Every glyph is {font.monoWidth} units wide. Each glyph’s own width is kept, so switching back to
+                  proportional restores it.
+                </p>
+                <button
+                  className="button block"
+                  disabled={!drawnCount}
+                  onClick={() => {
+                    if (confirm('Move every drawn glyph so it is centered in its cell?')) centerAllGlyphs(font.id);
+                  }}
+                >
+                  Center all glyphs in their cells
+                </button>
+              </>
+            ) : (
+              <p className="muted small">Each glyph has its own width, set on its drawing screen.</p>
+            )}
           </section>
 
           <section className="panel">

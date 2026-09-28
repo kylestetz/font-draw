@@ -1,7 +1,7 @@
 import * as opentype from 'opentype.js';
 import type { Font } from './types';
 import { ALL_CHARS, postscriptName } from './glyphs';
-import { drawnAlternates, getGlyph } from './store';
+import { advanceOf, drawnAlternates, getGlyph } from './store';
 import { buildGsub, type AltEntry } from './features';
 import type { Glyph } from './types';
 import { glyphOutline, walkContours } from './geometry/outline';
@@ -28,7 +28,9 @@ export function buildFont(font: Font): ArrayBuffer {
   notdefPath.lineTo(100, h - 50);
   notdefPath.close();
 
-  const glyphs = [new opentype.Glyph({ name: '.notdef', advanceWidth: w, path: notdefPath })];
+  const glyphs = [
+    new opentype.Glyph({ name: '.notdef', advanceWidth: font.monoWidth ?? w, path: notdefPath }),
+  ];
   let yMax = metrics.ascender;
   let yMin = metrics.descender;
 
@@ -50,7 +52,7 @@ export function buildFont(font: Font): ArrayBuffer {
       new opentype.Glyph({
         name,
         ...(unicode !== undefined && { unicode }),
-        advanceWidth: Math.max(0, Math.round(glyph.advance)),
+        advanceWidth: Math.max(0, Math.round(advanceOf(font, glyph))),
         path,
       }),
     );
@@ -91,6 +93,12 @@ export function buildFont(font: Font): ArrayBuffer {
     usWinAscent: Math.ceil(yMax),
     usWinDescent: Math.ceil(Math.abs(yMin)),
   });
+  if (font.monoWidth !== undefined) {
+    // Flag the font as fixed-pitch so apps list it with monospace fonts (e.g. for code editors).
+    (otf.tables as Record<string, unknown>).post = { isFixedPitch: 1 };
+    // PANOSE: family "Latin text" (2), proportion "monospaced" (9).
+    Object.assign(otf.tables.os2, { bFamilyType: 2, bProportion: 9 });
+  }
   return otf.toArrayBuffer();
 }
 

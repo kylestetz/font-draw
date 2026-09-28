@@ -2,6 +2,8 @@ import { useSyncExternalStore } from 'react';
 import { get, set } from 'idb-keyval';
 import type { Font, Glyph, Metrics } from './types';
 import { defaultAdvance } from './glyphs';
+import { glyphOutline } from './geometry/outline';
+import { translateShape } from './editor/shapes';
 
 const STORAGE_KEY = 'font-draw:fonts';
 
@@ -70,11 +72,15 @@ function patchFont(id: string, fn: (font: Font) => Font) {
   updateFonts((fonts) => fonts.map((f) => (f.id === id ? { ...fn(f), updatedAt: Date.now() } : f)));
 }
 
-export function createFont(): Font {
-  const n = state.fonts.length + 1;
+export const DEFAULT_MONO_WIDTH = 600;
+
+export const nextFontName = () => `Untitled ${state.fonts.length + 1}`;
+
+export function createFont(options: { name?: string; monoWidth?: number } = {}): Font {
   const font: Font = {
     id: uid(),
-    name: `Untitled ${n}`,
+    name: options.name?.trim() || nextFontName(),
+    ...(options.monoWidth !== undefined && { monoWidth: options.monoWidth }),
     createdAt: Date.now(),
     updatedAt: Date.now(),
     metrics: { ...DEFAULT_METRICS },
@@ -113,6 +119,35 @@ export function renameFont(id: string, name: string) {
 
 export function setMetrics(id: string, metrics: Partial<Metrics>) {
   patchFont(id, (f) => ({ ...f, metrics: { ...f.metrics, ...metrics } }));
+}
+
+/** The width a glyph actually takes up: the shared cell width in a monospaced font. */
+export const advanceOf = (font: Font, glyph: Glyph) => font.monoWidth ?? glyph.advance;
+
+/** Switch between proportional (`undefined`) and monospaced with the given cell width. */
+export function setMonoWidth(id: string, monoWidth: number | undefined) {
+  patchFont(id, (f) => {
+    const next = { ...f, monoWidth };
+    if (monoWidth === undefined) delete next.monoWidth;
+    return next;
+  });
+}
+
+/** Moves every glyph (and alternate) horizontally so its drawing is centered in the monospace cell. */
+export function centerAllGlyphs(id: string) {
+  const center = (f: Font, g: Glyph): Glyph => {
+    const bounds = glyphOutline(g.shapes).bounds;
+    if (!bounds) return g;
+    const dx = Math.round((advanceOf(f, g) - bounds.width) / 2 - bounds.x);
+    return dx ? { ...g, shapes: g.shapes.map((s) => translateShape(s, dx, 0)) } : g;
+  };
+  patchFont(id, (f) => ({
+    ...f,
+    glyphs: Object.fromEntries(Object.entries(f.glyphs).map(([c, g]) => [c, center(f, g)])),
+    alternates: Object.fromEntries(
+      Object.entries(f.alternates ?? {}).map(([c, alts]) => [c, alts.map((g) => center(f, g))]),
+    ),
+  }));
 }
 
 /** Variant 0 is the default glyph; 1… are alternates. */

@@ -57,6 +57,11 @@ export type Font = {
   glyphs: Record<string, Glyph>;
   /** Alternate drawings per character (variant 1 is index 0). */
   alternates?: Record<string, Glyph[]>;
+  /**
+   * When set, the font is monospaced: every glyph is this wide, whatever its own `advance` says.
+   * Each glyph keeps its proportional width, so switching back loses nothing.
+   */
+  monoWidth?: number;
   /** Cycle through alternates automatically as you type (OpenType `calt`). Defaults to on. */
   cycleAlternates?: boolean;
 };

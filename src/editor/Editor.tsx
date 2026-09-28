@@ -4,7 +4,7 @@ import type { Prefs } from '../prefs';
 import { brushCenterSvg, glyphSvgPath, penPathSvg } from '../geometry/outline';
 import { cleanStroke } from '../geometry/simplify';
 import { pressureScale } from '../geometry/pressure';
-import { uid } from '../store';
+import { advanceOf, uid } from '../store';
 import { setHandle, toggleNodeSmooth, translateShape, updateNode } from './shapes';
 
 export type Selection = { shapeId: string; node: number | null } | null;
@@ -69,8 +69,10 @@ export function Editor(props: EditorProps) {
     return () => ro.disconnect();
   }, []);
 
-  const advanceRef = useRef(glyph.advance);
-  advanceRef.current = glyph.advance;
+  const advance = advanceOf(font, glyph);
+  const mono = font.monoWidth !== undefined;
+  const advanceRef = useRef(advance);
+  advanceRef.current = advance;
   const fit = useCallback(() => {
     if (!size.w || !size.h) return;
     const advance = advanceRef.current;
@@ -135,11 +137,11 @@ export function Editor(props: EditorProps) {
       let { x, y } = p;
       const gy = guides.find((g) => Math.abs(g.y - y) < tol);
       y = gy ? gy.y : Math.round(y / SNAP) * SNAP;
-      const gx = [0, glyph.advance].find((gx) => Math.abs(gx - x) < tol);
+      const gx = [0, advance].find((gx) => Math.abs(gx - x) < tol);
       x = gx !== undefined ? gx : Math.round(x / SNAP) * SNAP;
       return { x, y };
     },
-    [prefs.snap, v.s, guides, glyph.advance],
+    [prefs.snap, v.s, guides, advance],
   );
 
   const constrain = (from: Vec, p: Vec): Vec => {
@@ -171,7 +173,7 @@ export function Editor(props: EditorProps) {
       return;
     }
 
-    if (target.closest('[data-advance]')) {
+    if (!mono && target.closest('[data-advance]')) {
       dragRef.current = { type: 'advance', base: glyph };
       return;
     }
@@ -444,7 +446,7 @@ export function Editor(props: EditorProps) {
                 className="em-box"
                 x={0}
                 y={metrics.descender}
-                width={Math.max(glyph.advance, 0)}
+                width={Math.max(advance, 0)}
                 height={metrics.ascender - metrics.descender}
               />
               {gridPath && <path className="grid" d={gridPath} />}
@@ -460,14 +462,14 @@ export function Editor(props: EditorProps) {
                   />
                 ))}
               <line className="sidebearing" x1={0} x2={0} y1={y0} y2={y1} />
-              <line className="sidebearing" x1={glyph.advance} x2={glyph.advance} y1={y0} y2={y1} />
+              <line className="sidebearing" x1={advance} x2={advance} y1={y0} y2={y1} />
 
               {prefs.showReference && (
                 <ReferenceGlyph
                   char={char}
                   family={prefs.referenceFont}
                   capHeight={metrics.capHeight}
-                  advance={glyph.advance}
+                  advance={advance}
                   opacity={prefs.referenceOpacity}
                 />
               )}
@@ -540,12 +542,15 @@ export function Editor(props: EditorProps) {
                 </text>
               ))}
 
-            <g data-advance className="advance-handle" transform={`translate(${sx(glyph.advance)} ${sy(metrics.descender) + 14})`}>
-              <rect x={-7} y={-7} width={14} height={14} />
-              <path d="M-3 -3 L-5.5 0 L-3 3 M3 -3 L5.5 0 L3 3" />
-            </g>
-            <text className="advance-label" x={sx(glyph.advance) + 12} y={sy(metrics.descender) + 18}>
-              {Math.round(glyph.advance)}
+            {!mono && (
+              <g data-advance className="advance-handle" transform={`translate(${sx(advance)} ${sy(metrics.descender) + 14})`}>
+                <rect x={-7} y={-7} width={14} height={14} />
+                <path d="M-3 -3 L-5.5 0 L-3 3 M3 -3 L5.5 0 L3 3" />
+              </g>
+            )}
+            <text className="advance-label" x={sx(advance) + (mono ? 6 : 12)} y={sy(metrics.descender) + 18}>
+              {Math.round(advance)}
+              {mono ? ' · monospace' : ''}
             </text>
 
             {prefs.tool === 'select' && selectedShape?.kind === 'pen' && (
