@@ -25,6 +25,11 @@ export type BrushShape = {
   width: number;
   /** Flat list of x,y pairs in font units. */
   points: number[];
+  /**
+   * Stylus pressure per point (0–1), present when the stroke was drawn with pen pressure on.
+   * `width` is then the width at full pressure.
+   */
+  pressures?: number[];
 };
 
 export type Shape = PenShape | BrushShape;

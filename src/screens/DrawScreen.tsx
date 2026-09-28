@@ -10,6 +10,7 @@ import { NumberField } from '../components/NumberField';
 import { glyphOutline } from '../geometry/outline';
 import { translateShape } from '../editor/shapes';
 import { Logo } from './Library';
+import { pressureScale } from '../geometry/pressure';
 
 type History = { past: Glyph[]; future: Glyph[] };
 const HISTORY_LIMIT = 200;
@@ -87,6 +88,7 @@ export function DrawScreen({ font, char }: { font: Font; char: string }) {
   const [view, setView] = useState<View | null>(null);
   const [fitKey, setFitKey] = useState(0);
   const [showKeys, setShowKeys] = useState(false);
+  const [penDetected, setPenDetected] = useState(false);
   const histories = useRef(new Map<string, History>());
   const [, bump] = useState(0);
 
@@ -248,6 +250,13 @@ export function DrawScreen({ font, char }: { font: Font; char: string }) {
     else if (k === 'g') setPrefs({ showGrid: !prefs.showGrid });
     else if (k === '0') setFitKey((n) => n + 1);
   };
+  useEffect(() => {
+    if (penDetected) return;
+    const onPointer = (e: PointerEvent) => e.pointerType === 'pen' && setPenDetected(true);
+    window.addEventListener('pointerdown', onPointer);
+    return () => window.removeEventListener('pointerdown', onPointer);
+  }, [penDetected]);
+
   useEffect(() => {
     const down = (e: KeyboardEvent) => keyHandler.current(e);
     const up = (e: KeyboardEvent) => e.key === ' ' && setSpaceHeld(false);
@@ -415,7 +424,25 @@ export function DrawScreen({ font, char }: { font: Font; char: string }) {
               <WidthControl
                 value={prefs.tool === 'eraser' ? prefs.eraserWidth : prefs.brushWidth}
                 onChange={(w) => setPrefs(prefs.tool === 'eraser' ? { eraserWidth: w } : { brushWidth: w })}
+                tapered={prefs.tool === 'brush' && prefs.usePressure}
               />
+            )}
+            {prefs.tool === 'brush' && (
+              <div className="checkbox-group">
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={prefs.usePressure}
+                    onChange={(e) => setPrefs({ usePressure: e.target.checked })}
+                  />
+                  <span>Use pen pressure</span>
+                </label>
+                <p className="muted small">
+                  {penDetected
+                    ? 'Stylus detected. Press harder for a heavier line, up to the width above.'
+                    : 'Works with a pressure-sensitive stylus like Apple Pencil. Mouse and finger strokes stay a fixed width.'}
+                </p>
+              </div>
             )}
             {prefs.tool === 'pen' && (
               <>
@@ -628,17 +655,49 @@ function hintFor(tool: Tool, drafting: boolean) {
   }
 }
 
-function WidthControl({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+function WidthControl({
+  value,
+  onChange,
+  tapered = false,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  /** Preview a pressure stroke (light → heavy → light) instead of a single dot. */
+  tapered?: boolean;
+}) {
+  const full = Math.max(2, (value / 300) * 56);
+  let preview: React.ReactNode = <circle cx="60" cy="30" r={full / 2} />;
+  if (tapered) {
+    const pts = Array.from({ length: 41 }, (_, i) => {
+      const t = i / 40;
+      return { x: 12 + t * 96, y: 30 - Math.sin(t * Math.PI * 2) * 10, w: full * pressureScale(Math.sin(t * Math.PI)) };
+    });
+    preview = (
+      <g className="taper">
+        {pts.slice(1).map((p, i) => (
+          <line key={i} x1={pts[i].x} y1={pts[i].y} x2={p.x} y2={p.y} strokeWidth={(pts[i].w + p.w) / 2} />
+        ))}
+      </g>
+    );
+  }
   return (
     <div className="width-control">
       <div className="width-preview">
         <svg viewBox="0 0 120 60" aria-hidden>
-          <circle cx="60" cy="30" r={Math.max(1, (value / 300) * 28)} />
+          {preview}
         </svg>
       </div>
       <div className="width-inputs">
         <input type="range" min={4} max={300} value={value} onChange={(e) => onChange(+e.target.value)} />
-        <NumberField label="Width" value={value} min={4} max={300} step={2} onChange={onChange} suffix="u" />
+        <NumberField
+          label={tapered ? 'Max width' : 'Width'}
+          value={value}
+          min={4}
+          max={300}
+          step={2}
+          onChange={onChange}
+          suffix="u"
+        />
       </div>
     </div>
   );

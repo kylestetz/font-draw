@@ -41,8 +41,18 @@ declare module 'clipper-lib' {
       AddPath(path: IntPoint[], joinType: number, endType: number): void;
       Execute(solution: IntPoint[][], delta: number): void;
     };
+    Clipper: {
+      new (): {
+        AddPaths(paths: IntPoint[][], polyType: number, closed: boolean): void;
+        Execute(clipType: number, solution: IntPoint[][], subjFill: number, clipFill: number): boolean;
+      };
+      Orientation(path: IntPoint[]): boolean;
+    };
     JoinType: { jtRound: number };
     EndType: { etOpenRound: number };
+    ClipType: { ctUnion: number };
+    PolyType: { ptSubject: number };
+    PolyFillType: { pftNonZero: number };
   };
   export default ClipperLib;
 }

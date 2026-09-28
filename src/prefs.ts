@@ -5,6 +5,8 @@ export type Tool = 'select' | 'pen' | 'brush' | 'eraser';
 export type Prefs = {
   tool: Tool;
   brushWidth: number;
+  /** Vary brush width with stylus pressure (Apple Pencil etc.). */
+  usePressure: boolean;
   eraserWidth: number;
   penOp: 'add' | 'cut';
   showReference: boolean;
@@ -31,6 +33,7 @@ export const REFERENCE_FONTS: { label: string; stack: string }[] = [
 const DEFAULTS: Prefs = {
   tool: 'brush',
   brushWidth: 80,
+  usePressure: true,
   eraserWidth: 60,
   penOp: 'add',
   showReference: true,

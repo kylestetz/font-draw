@@ -828,6 +828,9 @@ input[type='range']:active::-webkit-slider-thumb {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.editor-svg .live-dot {
+  fill: var(--ink);
+}
 .editor-svg .live-stroke.eraser {
   stroke: var(--accent);
   stroke-opacity: 0.25;
@@ -1005,6 +1008,10 @@ input[type='range']:active::-webkit-slider-thumb {
 .width-preview circle {
   fill: var(--ink);
 }
+.width-preview .taper line {
+  stroke: var(--ink);
+  stroke-linecap: round;
+}
 .width-inputs {
   display: flex;
   gap: 12px;
@@ -1018,6 +1025,40 @@ input[type='range']:active::-webkit-slider-thumb {
   width: 86px;
 }
 
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+.checkbox input {
+  appearance: none;
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+}
+.checkbox input:checked {
+  background: var(--ink);
+}
+.checkbox input:checked::after {
+  content: '';
+  width: 8px;
+  height: 4px;
+  border-left: 1.5px solid var(--paper);
+  border-bottom: 1.5px solid var(--paper);
+  transform: translateY(-1px) rotate(-45deg);
+}
 .context-run {
   width: 100%;
   height: 64px;

@@ -9,6 +9,7 @@
 import paper from 'paper/dist/paper-core';
 import ClipperLib from 'clipper-lib';
 import type { BrushShape, PathNode, PenShape, Shape } from '../types';
+import { pressureScale } from './pressure';
 
 const scope = new paper.PaperScope();
 scope.setup(new scope.Size(1, 1));
@@ -39,17 +40,89 @@ function penItem(shape: PenShape): paper.PathItem | null {
   });
 }
 
-function brushItem(shape: BrushShape): paper.PathItem | null {
-  const { points, width } = shape;
-  if (points.length < 2 || width <= 0) return null;
-  const src = [];
+type IntPoint = { X: number; Y: number };
+
+/** Constant-width stroke: Clipper's round-ended offset of the centerline. */
+function offsetStroke(points: number[], width: number): IntPoint[][] {
+  const src: IntPoint[] = [];
   for (let i = 0; i < points.length; i += 2) {
     src.push({ X: Math.round(points[i] * CLIPPER_SCALE), Y: Math.round(points[i + 1] * CLIPPER_SCALE) });
   }
   const offset = new ClipperLib.ClipperOffset(2, ARC_TOLERANCE * CLIPPER_SCALE);
   offset.AddPath(src, ClipperLib.JoinType.jtRound, ClipperLib.EndType.etOpenRound);
-  const solution: { X: number; Y: number }[][] = [];
+  const solution: IntPoint[][] = [];
   offset.Execute(solution, (width / 2) * CLIPPER_SCALE);
+  return solution;
+}
+
+function circlePoints(x: number, y: number, r: number, out: [number, number][]) {
+  // Enough sides that the arc error stays within ARC_TOLERANCE.
+  const steps = Math.max(8, Math.min(96, Math.ceil(Math.PI / Math.acos(Math.max(-1, 1 - ARC_TOLERANCE / Math.max(r, 0.01))))));
+  for (let i = 0; i < steps; i++) {
+    const a = (i / steps) * Math.PI * 2;
+    out.push([x + Math.cos(a) * r, y + Math.sin(a) * r]);
+  }
+}
+
+/** Convex hull (monotone chain), counter-clockwise. */
+function convexHull(pts: [number, number][]): [number, number][] {
+  pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower: [number, number][] = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper: [number, number][] = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  return lower.slice(0, -1).concat(upper.slice(0, -1));
+}
+
+/**
+ * Variable-width stroke: each segment is the hull of the circles at its two ends (so the width
+ * tapers linearly between samples), and all the segment hulls are unioned.
+ */
+function pressureStroke(points: number[], pressures: number[], width: number): IntPoint[][] {
+  const radius = (i: number) => (width / 2) * pressureScale(pressures[i] ?? 1);
+  const n = points.length / 2;
+  const toInt = (poly: [number, number][]) =>
+    poly.map(([x, y]) => ({ X: Math.round(x * CLIPPER_SCALE), Y: Math.round(y * CLIPPER_SCALE) }));
+  const polys: IntPoint[][] = [];
+  if (n === 1) {
+    const circle: [number, number][] = [];
+    circlePoints(points[0], points[1], radius(0), circle);
+    polys.push(toInt(circle));
+  }
+  for (let i = 0; i < n - 1; i++) {
+    const pts: [number, number][] = [];
+    circlePoints(points[i * 2], points[i * 2 + 1], radius(i), pts);
+    circlePoints(points[i * 2 + 2], points[i * 2 + 3], radius(i + 1), pts);
+    polys.push(toInt(convexHull(pts)));
+  }
+  const clipper = new ClipperLib.Clipper();
+  clipper.AddPaths(polys, ClipperLib.PolyType.ptSubject, true);
+  const solution: IntPoint[][] = [];
+  clipper.Execute(
+    ClipperLib.ClipType.ctUnion,
+    solution,
+    ClipperLib.PolyFillType.pftNonZero,
+    ClipperLib.PolyFillType.pftNonZero,
+  );
+  return solution;
+}
+
+function brushItem(shape: BrushShape): paper.PathItem | null {
+  const { points, width, pressures } = shape;
+  if (points.length < 2 || width <= 0) return null;
+  const solution =
+    pressures && pressures.length === points.length / 2
+      ? pressureStroke(points, pressures, width)
+      : offsetStroke(points, width);
   const children = solution
     .filter((poly) => poly.length >= 3)
     .map((poly) => {

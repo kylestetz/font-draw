@@ -1,12 +1,9 @@
-/** Freehand point processing: light smoothing followed by Ramer–Douglas–Peucker simplification. */
+/**
+ * Freehand point processing: light smoothing followed by Ramer–Douglas–Peucker simplification.
+ * Pressure, when present, is treated as a third dimension so width changes survive simplification.
+ */
 
-type Pt = [number, number];
-
-function toPairs(flat: number[]): Pt[] {
-  const out: Pt[] = [];
-  for (let i = 0; i < flat.length; i += 2) out.push([flat[i], flat[i + 1]]);
-  return out;
-}
+type Pt = [number, number, number];
 
 function smooth(pts: Pt[], passes = 2): Pt[] {
   let cur = pts;
@@ -14,10 +11,10 @@ function smooth(pts: Pt[], passes = 2): Pt[] {
     if (cur.length < 3) return cur;
     const next: Pt[] = [cur[0]];
     for (let i = 1; i < cur.length - 1; i++) {
-      next.push([
-        (cur[i - 1][0] + cur[i][0] * 2 + cur[i + 1][0]) / 4,
-        (cur[i - 1][1] + cur[i][1] * 2 + cur[i + 1][1]) / 4,
-      ]);
+      const a = cur[i - 1];
+      const b = cur[i];
+      const c = cur[i + 1];
+      next.push([(a[0] + b[0] * 2 + c[0]) / 4, (a[1] + b[1] * 2 + c[1]) / 4, (a[2] + b[2] * 2 + c[2]) / 4]);
     }
     next.push(cur[cur.length - 1]);
     cur = next;
@@ -25,12 +22,13 @@ function smooth(pts: Pt[], passes = 2): Pt[] {
   return cur;
 }
 
-function perpDist(p: Pt, a: Pt, b: Pt) {
-  const dx = b[0] - a[0];
-  const dy = b[1] - a[1];
-  const len = Math.hypot(dx, dy);
-  if (len === 0) return Math.hypot(p[0] - a[0], p[1] - a[1]);
-  return Math.abs(dy * p[0] - dx * p[1] + b[0] * a[1] - b[1] * a[0]) / len;
+/** Distance from p to the segment a–b in 3D. */
+function segDist(p: Pt, a: Pt, b: Pt) {
+  const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const len2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+  let t = len2 ? ((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1] + (p[2] - a[2]) * d[2]) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p[0] - a[0] - d[0] * t, p[1] - a[1] - d[1] * t, p[2] - a[2] - d[2] * t);
 }
 
 function rdp(pts: Pt[], tolerance: number): Pt[] {
@@ -43,7 +41,7 @@ function rdp(pts: Pt[], tolerance: number): Pt[] {
     let maxD = 0;
     let idx = -1;
     for (let i = s + 1; i < e; i++) {
-      const d = perpDist(pts[i], pts[s], pts[e]);
+      const d = segDist(pts[i], pts[s], pts[e]);
       if (d > maxD) {
         maxD = d;
         idx = i;
@@ -57,7 +55,26 @@ function rdp(pts: Pt[], tolerance: number): Pt[] {
   return pts.filter((_, i) => keep[i]);
 }
 
-export function cleanStroke(flat: number[], tolerance = 1.2): number[] {
-  const pts = rdp(smooth(toPairs(flat)), tolerance);
-  return pts.flatMap(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
+const r1 = (n: number) => Math.round(n * 10) / 10;
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/**
+ * Cleans a raw freehand stroke. `pressures` (one per point) are optional; `width` scales pressure
+ * into font units so a width change is weighed like a positional one during simplification.
+ */
+export function cleanStroke(
+  flat: number[],
+  pressures?: number[],
+  width = 0,
+  tolerance = 1.2,
+): { points: number[]; pressures?: number[] } {
+  const zScale = pressures ? width / 2 : 0;
+  const pts: Pt[] = [];
+  for (let i = 0; i < flat.length; i += 2) pts.push([flat[i], flat[i + 1], (pressures?.[i / 2] ?? 0) * zScale]);
+  // Pressure is noisy, so smooth it a little more than position.
+  const out = rdp(smooth(pts, pressures ? 3 : 2), tolerance);
+  return {
+    points: out.flatMap(([x, y]) => [r1(x), r1(y)]),
+    pressures: pressures ? out.map(([, , z]) => r3(zScale ? z / zScale : 0)) : undefined,
+  };
 }

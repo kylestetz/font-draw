@@ -3,6 +3,7 @@ import type { BrushShape, Font, Glyph, PathNode, PenShape, Shape, Vec } from '..
 import type { Prefs } from '../prefs';
 import { brushCenterSvg, glyphSvgPath, penPathSvg } from '../geometry/outline';
 import { cleanStroke } from '../geometry/simplify';
+import { pressureScale } from '../geometry/pressure';
 import { uid } from '../store';
 import { setHandle, toggleNodeSmooth, translateShape, updateNode } from './shapes';
 
@@ -51,7 +52,9 @@ export function Editor(props: EditorProps) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   const dragRef = useRef<Drag | null>(null);
   const strokeRef = useRef<number[]>([]);
-  const [liveStroke, setLiveStroke] = useState<number[] | null>(null);
+  /** Per-point stylus pressure for the stroke in progress; null when pressure isn't in use. */
+  const pressureRef = useRef<number[] | null>(null);
+  const [liveStroke, setLiveStroke] = useState<{ points: number[]; pressures: number[] | null } | null>(null);
   const [hover, setHover] = useState<Vec | null>(null);
   const [panning, setPanning] = useState(false);
 
@@ -174,7 +177,10 @@ export function Editor(props: EditorProps) {
     const tool = prefs.tool;
     if (tool === 'brush' || tool === 'eraser') {
       strokeRef.current = [p.x, p.y];
-      setLiveStroke([p.x, p.y]);
+      // Pressure only means something for a real stylus (mice report a constant 0.5).
+      const usePressure = tool === 'brush' && prefs.usePressure && e.pointerType === 'pen';
+      pressureRef.current = usePressure ? [e.pressure] : null;
+      setLiveStroke({ points: [p.x, p.y], pressures: pressureRef.current && [...pressureRef.current] });
       dragRef.current = { type: 'brush' };
       return;
     }
@@ -250,13 +256,20 @@ export function Editor(props: EditorProps) {
       case 'brush': {
         const events = e.nativeEvent.getCoalescedEvents?.() ?? [e.nativeEvent];
         const pts = strokeRef.current;
+        const pressures = pressureRef.current;
         for (const ev of events) {
           const q = toFont(ev.clientX, ev.clientY);
           const lx = pts[pts.length - 2];
           const ly = pts[pts.length - 1];
-          if (Math.hypot(q.x - lx, q.y - ly) * v.s >= 1.5) pts.push(q.x, q.y);
+          if (Math.hypot(q.x - lx, q.y - ly) * v.s >= 1.5) {
+            pts.push(q.x, q.y);
+            pressures?.push(ev.pressure);
+          } else if (pressures) {
+            // Pressing harder without moving should still thicken the line.
+            pressures[pressures.length - 1] = Math.max(pressures[pressures.length - 1], ev.pressure);
+          }
         }
-        setLiveStroke([...pts]);
+        setLiveStroke({ points: [...pts], pressures: pressures && [...pressures] });
         break;
       }
       case 'pen-handle': {
@@ -339,15 +352,19 @@ export function Editor(props: EditorProps) {
         break;
       case 'brush': {
         const eraser = prefs.tool === 'eraser';
+        const width = eraser ? prefs.eraserWidth : prefs.brushWidth;
+        const { points, pressures } = cleanStroke(strokeRef.current, pressureRef.current ?? undefined, width);
         const shape: BrushShape = {
           id: uid(),
           kind: 'brush',
           op: eraser ? 'cut' : 'add',
-          width: eraser ? prefs.eraserWidth : prefs.brushWidth,
-          points: cleanStroke(strokeRef.current),
+          width,
+          points,
+          ...(pressures && { pressures }),
         };
         setLiveStroke(null);
         strokeRef.current = [];
+        pressureRef.current = null;
         if (eraser && !glyph.shapes.length) break;
         props.commit({ ...glyph, shapes: [...glyph.shapes, shape] });
         break;
@@ -471,13 +488,16 @@ export function Editor(props: EditorProps) {
               )}
 
               {/* live brush stroke */}
-              {liveStroke && (
-                <path
-                  className={prefs.tool === 'eraser' ? 'live-stroke eraser' : 'live-stroke'}
-                  d={brushCenterSvg(liveStroke)}
-                  strokeWidth={prefs.tool === 'eraser' ? prefs.eraserWidth : prefs.brushWidth}
-                />
-              )}
+              {liveStroke &&
+                (liveStroke.pressures ? (
+                  <PressureStroke points={liveStroke.points} pressures={liveStroke.pressures} width={prefs.brushWidth} />
+                ) : (
+                  <path
+                    className={prefs.tool === 'eraser' ? 'live-stroke eraser' : 'live-stroke'}
+                    d={brushCenterSvg(liveStroke.points)}
+                    strokeWidth={prefs.tool === 'eraser' ? prefs.eraserWidth : prefs.brushWidth}
+                  />
+                ))}
 
               {/* pen draft */}
               {penDraft && penDraft.length > 0 && (
@@ -546,6 +566,27 @@ export function Editor(props: EditorProps) {
       </svg>
     </div>
   );
+}
+
+/** Cheap live preview of a pressure stroke: one round-capped line per segment. */
+function PressureStroke({ points, pressures, width }: { points: number[]; pressures: number[]; width: number }) {
+  const w = (i: number) => width * pressureScale(pressures[i]);
+  const n = points.length / 2;
+  if (n === 1) return <circle className="live-dot" cx={points[0]} cy={points[1]} r={w(0) / 2} />;
+  const lines = [];
+  for (let i = 0; i < n - 1; i++) {
+    lines.push(
+      <line
+        key={i}
+        x1={points[i * 2]}
+        y1={points[i * 2 + 1]}
+        x2={points[i * 2 + 2]}
+        y2={points[i * 2 + 3]}
+        strokeWidth={(w(i) + w(i + 1)) / 2}
+      />,
+    );
+  }
+  return <g className="live-stroke">{lines}</g>;
 }
 
 function SelectedOutline({ shape }: { shape: Shape }) {
