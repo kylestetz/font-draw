@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Font, Glyph, PathNode, PenShape } from '../types';
-import { getGlyph, isDrawn, setGlyph, uid } from '../store';
+import {
+  addAlternate,
+  deleteAlternate,
+  getGlyph,
+  isDrawn,
+  setCycleAlternates,
+  setGlyph,
+  uid,
+  variantCount,
+} from '../store';
 import { navigate, paths } from '../router';
 import { ALL_CHARS, codeHex, describeChar, groupOf } from '../glyphs';
 import { REFERENCE_FONTS, usePrefs, type Tool } from '../prefs';
@@ -79,8 +88,10 @@ function contextString(char: string) {
   return `HH${char}HOHO${char}OO`;
 }
 
-export function DrawScreen({ font, char }: { font: Font; char: string }) {
-  const glyph = getGlyph(font, char);
+export function DrawScreen({ font, char, variant }: { font: Font; char: string; variant: number }) {
+  const glyph = getGlyph(font, char, variant);
+  const variants = variantCount(font, char);
+  const historyKey = `${char}:${variant}`;
   const [prefs, setPrefs] = usePrefs();
   const [selection, setSelection] = useState<Selection>(null);
   const [penDraft, setPenDraft] = useState<PathNode[] | null>(null);
@@ -101,16 +112,16 @@ export function DrawScreen({ font, char }: { font: Font; char: string }) {
   // Always operate on the latest glyph inside callbacks.
   const glyphRef = useRef(glyph);
   glyphRef.current = glyph;
-  const charRef = useRef(char);
-  charRef.current = char;
+  const target = useRef({ char, variant, historyKey });
+  target.current = { char, variant, historyKey };
 
   const apply = useCallback(
-    (g: Glyph) => setGlyph(font.id, charRef.current, g),
+    (g: Glyph) => setGlyph(font.id, target.current.char, g, target.current.variant),
     [font.id],
   );
 
   const pushHistory = (base: Glyph) => {
-    const h = history(charRef.current);
+    const h = history(target.current.historyKey);
     h.past.push(base);
     if (h.past.length > HISTORY_LIMIT) h.past.shift();
     h.future = [];
@@ -132,7 +143,7 @@ export function DrawScreen({ font, char }: { font: Font; char: string }) {
   };
 
   const undo = () => {
-    const h = history(char);
+    const h = history(historyKey);
     const prev = h.past.pop();
     if (!prev) return;
     h.future.push(glyphRef.current);
@@ -140,7 +151,7 @@ export function DrawScreen({ font, char }: { font: Font; char: string }) {
     apply(prev);
   };
   const redo = () => {
-    const h = history(char);
+    const h = history(historyKey);
     const next = h.future.pop();
     if (!next) return;
     h.past.push(glyphRef.current);
@@ -166,10 +177,23 @@ export function DrawScreen({ font, char }: { font: Font; char: string }) {
   };
 
   const index = ALL_CHARS.indexOf(char);
-  const goTo = (c: string) => {
+  const goTo = (c: string, v = 0) => {
     finishPen();
     setSelection(null);
-    navigate(paths.glyph(font.id, codeHex(c)), true);
+    navigate(paths.glyph(font.id, codeHex(c), v), true);
+  };
+
+  const newAlternate = (copy: boolean) => {
+    finishPen();
+    goTo(char, addAlternate(font.id, char, copy ? glyph : undefined));
+  };
+  const removeAlternate = () => {
+    if (variant === 0) return;
+    if (glyph.shapes.length && !confirm(`Delete alternate ${variant} of “${char}”?`)) return;
+    // Later alternates shift down a slot, so their undo histories no longer line up.
+    for (const key of [...histories.current.keys()]) if (key.startsWith(`${char}:`)) histories.current.delete(key);
+    deleteAlternate(font.id, char, variant);
+    goTo(char, variant - 1);
   };
   const prev = () => goTo(ALL_CHARS[(index - 1 + ALL_CHARS.length) % ALL_CHARS.length]);
   const next = () => goTo(ALL_CHARS[(index + 1) % ALL_CHARS.length]);
@@ -300,7 +324,7 @@ export function DrawScreen({ font, char }: { font: Font; char: string }) {
     });
   };
 
-  const h = history(char);
+  const h = history(historyKey);
   const group = groupOf(char);
   const toolLabel = TOOLS.find((t) => t.id === prefs.tool)!.label;
   const customFont = !REFERENCE_FONTS.some((f) => f.stack === prefs.referenceFont);
@@ -320,6 +344,21 @@ export function DrawScreen({ font, char }: { font: Font; char: string }) {
           <span className="muted mono small">
             U+{codeHex(char)} · {group.label}
           </span>
+        </div>
+        <div className="bar-cell variant-tabs">
+          {Array.from({ length: variants }, (_, v) => (
+            <button
+              key={v}
+              className={v === variant ? 'active' : ''}
+              onClick={() => goTo(char, v)}
+              title={v === 0 ? 'Default glyph' : `Alternate ${v}`}
+            >
+              {v === 0 ? 'Default' : `Alt ${v}`}
+            </button>
+          ))}
+          <button onClick={() => newAlternate(false)} title="New alternate">
+            +
+          </button>
         </div>
         <div className="bar-spacer" />
         <button className="bar-cell bar-button" onClick={prev} title="Previous glyph (←)">
@@ -375,6 +414,7 @@ export function DrawScreen({ font, char }: { font: Font; char: string }) {
             font={font}
             char={char}
             glyph={glyph}
+            guide={variant > 0 && prefs.showDefaultGuide ? getGlyph(font, char) : undefined}
             prefs={prefs}
             selection={selection}
             setSelection={setSelection}
@@ -588,7 +628,56 @@ export function DrawScreen({ font, char }: { font: Font; char: string }) {
 
           <section className="panel">
             <div className="panel-title">In context</div>
-            <GlyphRun font={font} text={contextString(char)} highlight={char} className="context-run" padding={40} />
+            <GlyphRun
+              font={font}
+              text={contextString(char)}
+              highlight={char}
+              variant={variant}
+              className="context-run"
+              padding={40}
+            />
+            {variants > 1 && char !== ' ' && (
+              <>
+                <div className="muted small">Typed repeatedly, alternates cycle:</div>
+                <GlyphRun font={font} text={char.repeat(Math.min(8, variants * 2))} className="context-run" padding={40} />
+              </>
+            )}
+          </section>
+
+          <section className="panel">
+            <div className="panel-title">
+              Alternates <span className="muted">{variants > 1 ? `${variants - 1}` : 'none'}</span>
+            </div>
+            <p className="muted small">
+              Draw extra versions of a character. The font swaps between them as you type so repeated letters
+              look hand-drawn instead of identical.
+            </p>
+            <div className="button-row">
+              <button className="button" onClick={() => newAlternate(false)}>
+                New blank
+              </button>
+              <button className="button" onClick={() => newAlternate(true)} disabled={!glyph.shapes.length}>
+                Duplicate this
+              </button>
+            </div>
+            {variant > 0 && (
+              <>
+                <div className="toggle-row">
+                  <span>Show default glyph as a guide</span>
+                  <Toggle checked={prefs.showDefaultGuide} onChange={(showDefaultGuide) => setPrefs({ showDefaultGuide })} />
+                </div>
+                <button className="button block" onClick={removeAlternate}>
+                  Delete alternate {variant}
+                </button>
+              </>
+            )}
+            <div className="toggle-row">
+              <span>Cycle alternates as you type</span>
+              <Toggle
+                checked={font.cycleAlternates !== false}
+                onChange={(on) => setCycleAlternates(font.id, on)}
+              />
+            </div>
           </section>
 
           <section className="panel">

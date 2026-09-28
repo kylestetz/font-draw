@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
 import type { Font, Metrics } from '../types';
-import { deleteFont, getGlyph, isDrawn, renameFont, setMetrics } from '../store';
+import {
+  deleteFont,
+  drawnAlternates,
+  getGlyph,
+  isDrawn,
+  renameFont,
+  setCycleAlternates,
+  setMetrics,
+} from '../store';
 import { navigate, paths } from '../router';
 import { ALL_CHARS, GLYPH_GROUPS, codeHex, describeChar } from '../glyphs';
 import { buildFont, downloadFont, downloadProject } from '../export';
@@ -35,7 +43,7 @@ function useFontFace(font: Font) {
       const old = face;
       if (old) setTimeout(() => document.fonts.delete(old), 2000);
     };
-  }, [font.glyphs, font.metrics, font.name]);
+  }, [font.glyphs, font.alternates, font.cycleAlternates, font.metrics, font.name]);
   return family;
 }
 
@@ -51,6 +59,7 @@ export function FontView({ font }: { font: Font }) {
   const [text, setText] = useState('Handgloves — The quick brown fox jumps over the lazy dog. 0123456789');
   const [size, setSize] = useState(64);
   const drawnCount = ALL_CHARS.filter((c) => isDrawn(font, c)).length;
+  const altCount = ALL_CHARS.reduce((n, c) => n + (isDrawn(font, c) ? drawnAlternates(font, c).length : 0), 0);
   const firstUndrawn = ALL_CHARS.find((c) => !isDrawn(font, c) && c !== ' ');
 
   return (
@@ -120,6 +129,7 @@ export function FontView({ font }: { font: Font }) {
                   {group.chars.map((char) => {
                     const glyph = getGlyph(font, char);
                     const drawn = glyph.shapes.length > 0;
+                    const alts = drawnAlternates(font, char).length;
                     return (
                       <a
                         key={char}
@@ -132,6 +142,11 @@ export function FontView({ font }: { font: Font }) {
                           <GlyphThumb font={font} glyph={glyph} className="glyph-cell-svg" />
                         ) : (
                           <span className="glyph-cell-ghost">{char === ' ' ? 'Space' : char}</span>
+                        )}
+                        {alts > 0 && (
+                          <span className="glyph-cell-alts" title={`${alts} alternate${alts > 1 ? 's' : ''}`}>
+                            +{alts}
+                          </span>
                         )}
                       </a>
                     );
@@ -154,6 +169,27 @@ export function FontView({ font }: { font: Font }) {
             </div>
             <div className="muted small mono">
               {drawnCount} of {ALL_CHARS.length} glyphs drawn
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-title">
+              Alternates <span className="muted">{altCount} glyphs</span>
+            </div>
+            <p className="muted small">
+              Add alternates from a glyph’s drawing screen. They’re exported as OpenType contextual
+              alternates, plus stylistic alternates and sets for apps with a glyph picker.
+            </p>
+            <div className="toggle-row">
+              <span>Cycle alternates as you type</span>
+              <button
+                className={font.cycleAlternates !== false ? 'toggle on' : 'toggle'}
+                role="switch"
+                aria-checked={font.cycleAlternates !== false}
+                onClick={() => setCycleAlternates(font.id, font.cycleAlternates === false)}
+              >
+                <span />
+              </button>
             </div>
           </section>
 

@@ -1,7 +1,9 @@
 import * as opentype from 'opentype.js';
 import type { Font } from './types';
 import { ALL_CHARS, postscriptName } from './glyphs';
-import { getGlyph } from './store';
+import { drawnAlternates, getGlyph } from './store';
+import { buildGsub, type AltEntry } from './features';
+import type { Glyph } from './types';
 import { glyphOutline, walkContours } from './geometry/outline';
 
 function familyName(font: Font) {
@@ -30,9 +32,7 @@ export function buildFont(font: Font): ArrayBuffer {
   let yMax = metrics.ascender;
   let yMin = metrics.descender;
 
-  for (const char of ALL_CHARS) {
-    const glyph = getGlyph(font, char);
-    if (!glyph.shapes.length && char !== ' ') continue;
+  const addGlyph = (glyph: Glyph, name: string, unicode?: number) => {
     const path = new opentype.Path();
     const R = Math.round;
     const outline = glyphOutline(glyph.shapes);
@@ -48,12 +48,27 @@ export function buildFont(font: Font): ArrayBuffer {
     });
     glyphs.push(
       new opentype.Glyph({
-        name: postscriptName(char),
-        unicode: char.codePointAt(0)!,
+        name,
+        ...(unicode !== undefined && { unicode }),
         advanceWidth: Math.max(0, Math.round(glyph.advance)),
         path,
       }),
     );
+    return glyphs.length - 1;
+  };
+
+  // Each character is followed by its alternates, so a character's variants have adjacent ids.
+  const altEntries: AltEntry[] = [];
+  let spaceId: number | null = null;
+  for (const char of ALL_CHARS) {
+    const glyph = getGlyph(font, char);
+    if (!glyph.shapes.length && char !== ' ') continue;
+    const name = postscriptName(char);
+    const base = addGlyph(glyph, name, char.codePointAt(0)!);
+    if (char === ' ') spaceId = base;
+    if (!glyph.shapes.length) continue;
+    const alts = drawnAlternates(font, char).map((a, i) => addGlyph(a.glyph, `${name}.alt${i + 1}`));
+    if (alts.length) altEntries.push({ base, alts });
   }
 
   const otf = new opentype.Font({
@@ -66,6 +81,8 @@ export function buildFont(font: Font): ArrayBuffer {
     version: '1.0',
     glyphs,
   });
+  const gsub = buildGsub(altEntries, glyphs.length, spaceId, font.cycleAlternates !== false);
+  if (gsub) (otf.tables as Record<string, unknown>).gsub = gsub;
   // Take the drawn metrics as the source of truth, and keep Windows from clipping tall drawings.
   Object.assign(otf.tables.os2, {
     usWeightClass: 400,

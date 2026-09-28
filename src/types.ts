@@ -55,4 +55,8 @@ export type Font = {
   metrics: Metrics;
   /** Keyed by the glyph's character. Missing entries have never been touched. */
   glyphs: Record<string, Glyph>;
+  /** Alternate drawings per character (variant 1 is index 0). */
+  alternates?: Record<string, Glyph[]>;
+  /** Cycle through alternates automatically as you type (OpenType `calt`). Defaults to on. */
+  cycleAlternates?: boolean;
 };

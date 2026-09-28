@@ -23,6 +23,8 @@ export type EditorProps = {
   font: Font;
   char: string;
   glyph: Glyph;
+  /** Another glyph to show faintly behind this one (the default when drawing an alternate). */
+  guide?: Glyph;
   prefs: Prefs;
   selection: Selection;
   setSelection: (s: Selection) => void;
@@ -462,6 +464,10 @@ export function Editor(props: EditorProps) {
                   advance={glyph.advance}
                   opacity={prefs.referenceOpacity}
                 />
+              )}
+
+              {props.guide && (
+                <path className="guide-glyph" d={glyphSvgPath(props.guide.shapes)} />
               )}
 
               <path className="glyph-fill" d={outline} />

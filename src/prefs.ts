@@ -15,6 +15,8 @@ export type Prefs = {
   showGrid: boolean;
   showGuides: boolean;
   snap: boolean;
+  /** When drawing an alternate, show the default glyph faintly behind it. */
+  showDefaultGuide: boolean;
 };
 
 export const REFERENCE_FONTS: { label: string; stack: string }[] = [
@@ -42,6 +44,7 @@ const DEFAULTS: Prefs = {
   showGrid: true,
   showGuides: true,
   snap: false,
+  showDefaultGuide: true,
 };
 
 const KEY = 'font-draw:prefs';

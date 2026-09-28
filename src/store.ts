@@ -115,8 +115,20 @@ export function setMetrics(id: string, metrics: Partial<Metrics>) {
   patchFont(id, (f) => ({ ...f, metrics: { ...f.metrics, ...metrics } }));
 }
 
-export function getGlyph(font: Font, char: string): Glyph {
+/** Variant 0 is the default glyph; 1… are alternates. */
+export function getGlyph(font: Font, char: string, variant = 0): Glyph {
+  if (variant > 0) {
+    const alt = font.alternates?.[char]?.[variant - 1];
+    if (alt) return alt;
+  }
   return font.glyphs[char] ?? EMPTY_GLYPHS(char);
+}
+
+export const variantCount = (font: Font, char: string) => 1 + (font.alternates?.[char]?.length ?? 0);
+
+/** Alternates that have something drawn in them, with their variant numbers. */
+export function drawnAlternates(font: Font, char: string) {
+  return (font.alternates?.[char] ?? []).flatMap((g, i) => (g.shapes.length ? [{ glyph: g, variant: i + 1 }] : []));
 }
 
 // Stable empty glyph objects so memoized consumers don't recompute.
@@ -130,8 +142,37 @@ function EMPTY_GLYPHS(char: string): Glyph {
   return g;
 }
 
-export function setGlyph(fontId: string, char: string, glyph: Glyph) {
-  patchFont(fontId, (f) => ({ ...f, glyphs: { ...f.glyphs, [char]: glyph } }));
+export function setGlyph(fontId: string, char: string, glyph: Glyph, variant = 0) {
+  patchFont(fontId, (f) => {
+    if (variant === 0) return { ...f, glyphs: { ...f.glyphs, [char]: glyph } };
+    const alts = [...(f.alternates?.[char] ?? [])];
+    alts[variant - 1] = glyph;
+    return { ...f, alternates: { ...f.alternates, [char]: alts } };
+  });
+}
+
+/** Adds an alternate (a copy of `from`, or blank at the default glyph's width); returns its variant. */
+export function addAlternate(fontId: string, char: string, from?: Glyph): number {
+  const font = state.fonts.find((f) => f.id === fontId)!;
+  const alts = font.alternates?.[char] ?? [];
+  const glyph: Glyph = from
+    ? { ...from, shapes: from.shapes.map((s) => ({ ...s, id: uid() })) }
+    : { shapes: [], advance: getGlyph(font, char).advance };
+  patchFont(fontId, (f) => ({ ...f, alternates: { ...f.alternates, [char]: [...alts, glyph] } }));
+  return alts.length + 1;
+}
+
+export function deleteAlternate(fontId: string, char: string, variant: number) {
+  patchFont(fontId, (f) => {
+    const alts = (f.alternates?.[char] ?? []).filter((_, i) => i !== variant - 1);
+    const alternates = { ...f.alternates, [char]: alts };
+    if (!alts.length) delete alternates[char];
+    return { ...f, alternates };
+  });
+}
+
+export function setCycleAlternates(fontId: string, cycleAlternates: boolean) {
+  patchFont(fontId, (f) => ({ ...f, cycleAlternates }));
 }
 
 export const isDrawn = (font: Font, char: string) => (font.glyphs[char]?.shapes.length ?? 0) > 0;

@@ -162,6 +162,35 @@ button:disabled {
   box-shadow: inset 0 -1px 0 var(--ink);
 }
 
+.variant-tabs {
+  gap: 0;
+  padding: 0 12px;
+}
+.variant-tabs button {
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--ink);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.variant-tabs button + button {
+  border-left: none;
+}
+.variant-tabs button:hover:not(.active) {
+  background: var(--faint);
+}
+.variant-tabs button.active {
+  background: var(--ink);
+  color: var(--paper);
+}
+.button-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.button-row .button {
+  padding: 0 8px;
+}
 .counter {
   min-width: 84px;
   justify-content: center;
@@ -638,6 +667,17 @@ input[type='range']:active::-webkit-slider-thumb {
   background: var(--ink);
   border-radius: 50%;
 }
+.glyph-cell-alts {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 0 4px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  line-height: 14px;
+}
 .glyph-cell-svg {
   width: 80%;
   height: 80%;
@@ -789,6 +829,15 @@ input[type='range']:active::-webkit-slider-thumb {
 }
 .editor-svg .reference text {
   fill: var(--ink);
+}
+.editor-svg .guide-glyph {
+  fill: var(--accent);
+  fill-opacity: 0.07;
+  stroke: var(--accent);
+  stroke-opacity: 0.5;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
 }
 .editor-svg .glyph-fill {
   fill: var(--ink);
